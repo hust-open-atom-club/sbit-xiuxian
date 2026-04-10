@@ -315,10 +315,10 @@ window.fetch = window.__origFetch;
     /* =============== Content Lint =============== */
     log('info', '<h2>Content Lint — production data/*.md</h2>');
 
-    await asyncTest('load + parse data/questions.md (expect 16)', async function () {
+    await asyncTest('load + parse data/questions.md (expect 24)', async function () {
         var text = await LT.loadMarkdown('data/questions.md');
         var qs = LT.parseQuestions(text);
-        assert(qs.length === 16, 'got ' + qs.length);
+        assert(qs.length === 24, 'got ' + qs.length);
     });
 
     await asyncTest('load + parse data/results.md (expect 25 + default)', async function () {
@@ -344,27 +344,28 @@ window.fetch = window.__origFetch;
         var qs = LT.parseQuestions(qText);
         var dict = LT.parseResults(rText);
 
-        // Tianling 金: Q1(上:金+3) + Q3(上:金+3), others 下签(persona)
-        var a_tl = Array(16).fill(2); a_tl[0] = 0; a_tl[2] = 0;
+        // Tianling 金: Q1(上:金+3) + Q5(上:金+3), others 下签(persona)
+        var a_tl = Array(qs.length).fill(2); a_tl[0] = 0; a_tl[4] = 0;
         assert(LT.classify(LT.score(a_tl, qs)).品阶 === 'tianling', 'tianling');
 
-        // Bianling 雷(金+水): Q1(上:金+3) Q7(上:水+3) Q9(上:金+2水+2), others 下签
-        var a_bl = Array(16).fill(2); a_bl[0] = 0; a_bl[6] = 0; a_bl[8] = 0;
+        // Bianling 雷(金+水): Q1(上:金+3) Q4(上:水+3) Q17(上:金+2水+2), others 下签
+        var a_bl = Array(qs.length).fill(2); a_bl[0] = 0; a_bl[3] = 0; a_bl[16] = 0;
         assert(LT.classify(LT.score(a_bl, qs)).品阶 === 'bianling', 'bianling');
 
-        // Zhenling 金木: Q1(上:金+3) Q6(上:木+3), others 下签
-        var a_zl = Array(16).fill(2); a_zl[0] = 0; a_zl[5] = 0;
+        // Zhenling 金木: Q1(上:金+3) Q2(上:木+3), others 下签
+        var a_zl = Array(qs.length).fill(2); a_zl[0] = 0; a_zl[1] = 0;
         assert(LT.classify(LT.score(a_zl, qs)).品阶 === 'zhenling', 'zhenling');
 
-        // Weiling: mostly 下签 + two 中签 giving small mixed wuxing (金=2 土=2)
-        var a_wl = Array(16).fill(2);
-        a_wl[1] = 1; // Q2中: 金+1 土+1
-        a_wl[3] = 1; // Q4中: 水+1 金+1
+        // Weiling: mostly 下签 + three 中签 giving small mixed wuxing
+        var a_wl = Array(qs.length).fill(2);
+        a_wl[2] = 1; // Q3中: 金+1 土+1
+        a_wl[5] = 1; // Q6中: 水+1 金+1
+        a_wl[7] = 1; // Q8中: 金+1 土+1
         var s_wl = LT.score(a_wl, qs);
         assert(LT.classify(s_wl).品阶 === 'weiling', 'weiling: got ' + LT.classify(s_wl).品阶);
 
         // Yinling: all 下签 (pure persona, wuxing=0)
-        var a_yl = Array(16).fill(2);
+        var a_yl = Array(qs.length).fill(2);
         assert(LT.classify(LT.score(a_yl, qs)).品阶 === 'yinling', 'yinling');
 
         // Verify all keys resolve
