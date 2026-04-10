@@ -16,8 +16,22 @@
 <div id="results"></div>
 
 <!-- Must be set BEFORE loading main.js to prevent production bootstrap -->
-<script>window.LingenTest_SKIP_BOOTSTRAP = true;</script>
+<script>
+window.LingenTest_SKIP_BOOTSTRAP = true;
+// AC-5 isolation instrumentation: count fetches that fire during main.js load
+window.__isolationFetchCount = 0;
+window.__origFetch = window.fetch;
+window.fetch = function () {
+    window.__isolationFetchCount++;
+    return window.__origFetch.apply(this, arguments);
+};
+</script>
 <script src="main.js"></script>
+<script>
+// Capture count before tests restore fetch and start making their own calls
+window.__isolationFetchCountFinal = window.__isolationFetchCount;
+window.fetch = window.__origFetch;
+</script>
 <script>
 (async function runAllTests() {
     'use strict';
@@ -135,6 +149,58 @@
         assertThrows(function () { LT.parseResults(md); }, '白名单');
     });
 
+    test('duplicate key error names BOTH entries', function () {
+        var md = sampleResultsMd + '\n\n## 另一个\nkey: test_key\n品阶: x\n属性: x\n前缀: x\n结果代码: T2\n### 签文\ntext\n### 推荐功法\n- a\n### 画像\n袍色: #aaa\n配饰: sword\n背景: rocks\n符文色: #bbb';
+        try { LT.parseResults(md); assert(false, 'should throw'); }
+        catch (e) {
+            assert(e.message.indexOf('另一个') !== -1, 'error should name current entry "另一个"');
+            assert(e.message.indexOf('测试灵根') !== -1, 'error should name first entry "测试灵根"');
+        }
+    });
+
+    test('duplicate 结果代码 error names BOTH entries', function () {
+        var md = '## A\nkey: k1\n品阶: x\n属性: x\n前缀: x\n结果代码: SAME\n### 签文\ntext\n### 推荐功法\n- a\n### 画像\n袍色: #aaa\n配饰: sword\n背景: rocks\n符文色: #bbb\n\n' +
+                 '## B\nkey: k2\n品阶: x\n属性: x\n前缀: x\n结果代码: SAME\n### 签文\ntext\n### 推荐功法\n- a\n### 画像\n袍色: #aaa\n配饰: sword\n背景: rocks\n符文色: #bbb\n\n' +
+                 '## 无根之人\nkey: default_default_default\n品阶: x\n属性: x\n前缀: x\n结果代码: DEF\n### 签文\ntext\n### 推荐功法\n- a\n### 画像\n袍色: #aaa\n配饰: nothing\n背景: blank\n符文色: #bbb';
+        try { LT.parseResults(md); assert(false, 'should throw'); }
+        catch (e) {
+            assert(e.message.indexOf('B') !== -1, 'should name current entry B');
+            assert(e.message.indexOf('A') !== -1, 'should name first entry A');
+        }
+    });
+
+    /* =============== AC-5 isolation test =============== */
+    log('info', '<h2>AC-5 isolation</h2>');
+
+    test('AC-5: loading main.js with SKIP_BOOTSTRAP caused zero fetches', function () {
+        assert(window.__isolationFetchCountFinal === 0,
+            'expected 0 fetches during main.js load, got ' + window.__isolationFetchCountFinal);
+    });
+
+    /* =============== AC-8 renderPortrait config.image returns DOM node =============== */
+    log('info', '<h2>AC-8 renderPortrait</h2>');
+
+    test('renderPortrait({ image }) returns an HTMLImageElement', function () {
+        var result = LT.renderPortrait({ image: 'test.png' });
+        assert(result && result.tagName && result.tagName.toLowerCase() === 'img',
+            'expected <img> element, got ' + typeof result);
+        assert(result.src.indexOf('test.png') !== -1, 'src should contain test.png');
+    });
+
+    /* =============== AC-15 screenshot hint exact text =============== */
+    log('info', '<h2>AC-15 screenshot hint</h2>');
+
+    test('unknown UA screenshot hint matches plan text exactly', function () {
+        // Temporarily override navigator.userAgent check by testing the function logic
+        // The function uses regex on navigator.userAgent; we just verify the else branch text
+        var origUA = navigator.userAgent;
+        // We cannot override navigator.userAgent directly, so verify the string constant in source
+        // by reading the function source
+        var fnSrc = LT.showScreenshotHint ? LT.showScreenshotHint.toString() : '';
+        assert(fnSrc.indexOf('请用系统截图快捷键截图') !== -1,
+            'generic hint should be exactly "请用系统截图快捷键截图"');
+    });
+
     /* =============== score / classify / resolveKey =============== */
     log('info', '<h2>score / classify / resolveKey</h2>');
 
@@ -236,22 +302,22 @@
         var qs = LT.parseQuestions(qText);
         var dict = LT.parseResults(rText);
 
-        // Tianling: Q1(上:金+3) + Q13(上:金+3), others 下签(persona)
-        var a_tl = Array(16).fill(2); a_tl[0] = 0; a_tl[12] = 0;
+        // Tianling 金: Q1(上:金+3) + Q3(上:金+3), others 下签(persona)
+        var a_tl = Array(16).fill(2); a_tl[0] = 0; a_tl[2] = 0;
         assert(LT.classify(LT.score(a_tl, qs)).品阶 === 'tianling', 'tianling');
 
-        // Bianling 雷: Q1(上:金+3) Q3(上:水+3) Q6(上:金+2水+2), others 下签
-        var a_bl = Array(16).fill(2); a_bl[0] = 0; a_bl[2] = 0; a_bl[5] = 0;
+        // Bianling 雷(金+水): Q1(上:金+3) Q7(上:水+3) Q9(上:金+2水+2), others 下签
+        var a_bl = Array(16).fill(2); a_bl[0] = 0; a_bl[6] = 0; a_bl[8] = 0;
         assert(LT.classify(LT.score(a_bl, qs)).品阶 === 'bianling', 'bianling');
 
-        // Zhenling: Q1(上:金+3) Q2(上:木+3), others 下签
-        var a_zl = Array(16).fill(2); a_zl[0] = 0; a_zl[1] = 0;
+        // Zhenling 金木: Q1(上:金+3) Q6(上:木+3), others 下签
+        var a_zl = Array(16).fill(2); a_zl[0] = 0; a_zl[5] = 0;
         assert(LT.classify(LT.score(a_zl, qs)).品阶 === 'zhenling', 'zhenling');
 
-        // Weiling: mostly 下签 + two 中签 giving small mixed wuxing
+        // Weiling: mostly 下签 + two 中签 giving small mixed wuxing (金=2 土=2)
         var a_wl = Array(16).fill(2);
-        a_wl[1] = 1; // Q2中: 土+1 金+1
-        a_wl[3] = 1; // Q4中: 金+1 土+1
+        a_wl[1] = 1; // Q2中: 金+1 土+1
+        a_wl[3] = 1; // Q4中: 水+1 金+1
         var s_wl = LT.score(a_wl, qs);
         assert(LT.classify(s_wl).品阶 === 'weiling', 'weiling: got ' + LT.classify(s_wl).品阶);
 

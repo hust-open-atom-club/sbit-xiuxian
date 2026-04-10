@@ -212,9 +212,9 @@
         const dict = {};
         let current = null;
         let section = null; // 'meta' | '签文' | '推荐功法' | '画像'
-        const seenKeys  = new Set();
-        const seenNames = new Set();
-        const seenCodes = new Set();
+        var seenKeys  = {};  // key → first displayName
+        var seenNames = {};  // displayName → true
+        var seenCodes = {};  // 结果代码 → first displayName
 
         function flush() {
             if (current === null) return;
@@ -236,26 +236,29 @@
             if (!current.画像 || !current.画像.袍色) {
                 throw new Error('结果字典格式错误：条目 "' + current.displayName + '" 缺少画像配置');
             }
-            if (seenKeys.has(current.key)) {
+            if (seenKeys[current.key]) {
                 throw new Error(
                     '结果字典格式错误：key "' + current.key +
-                    '" 在条目 "' + current.displayName + '" 处与先前条目重复'
+                    '" 在条目 "' + current.displayName +
+                    '" 与 "' + seenKeys[current.key] + '" 重复'
                 );
             }
-            if (seenNames.has(current.displayName)) {
+            if (seenNames[current.displayName]) {
                 throw new Error(
-                    '结果字典格式错误：灵根名 "' + current.displayName + '" 与先前条目重复'
+                    '结果字典格式错误：灵根名 "' + current.displayName +
+                    '" 与先前同名条目重复'
                 );
             }
-            if (seenCodes.has(current.结果代码)) {
+            if (seenCodes[current.结果代码]) {
                 throw new Error(
                     '结果字典格式错误：结果代码 "' + current.结果代码 +
-                    '" 在条目 "' + current.displayName + '" 处与先前条目重复'
+                    '" 在条目 "' + current.displayName +
+                    '" 与 "' + seenCodes[current.结果代码] + '" 重复'
                 );
             }
-            seenKeys.add(current.key);
-            seenNames.add(current.displayName);
-            seenCodes.add(current.结果代码);
+            seenKeys[current.key] = current.displayName;
+            seenNames[current.displayName] = true;
+            seenCodes[current.结果代码] = current.displayName;
             dict[current.key] = current;
             current = null;
         }
@@ -627,8 +630,12 @@
     function renderPortrait(config) {
         if (!config) return '';
         if (config.image) {
-            return '<img src="' + escapeHtml(config.image) +
-                '" alt="灵根人物" width="240" height="320"/>';
+            var img = document.createElement('img');
+            img.src = config.image;
+            img.alt = '灵根人物';
+            img.width = 240;
+            img.height = 320;
+            return img;
         }
         const required = ['袍色', '配饰', '背景', '符文色'];
         for (let i = 0; i < required.length; i++) {
@@ -807,7 +814,9 @@
         const prefix = c.triple.前缀;
         const sealMap = { '躺平': '躺', 'emo': 'emo', '社牛': '牛', '钝感': '钝' };
         const sealChar = sealMap[prefix] || '?';
-        const portraitSvg = renderPortrait(r.画像);
+        const portraitOutput = renderPortrait(r.画像);
+        // portraitOutput: string (SVG HTML) or HTMLElement (img node)
+        const portraitIsNode = portraitOutput && typeof portraitOutput !== 'string';
 
         let wuxingBars = '';
         for (let i = 0; i < WUXING.length; i++) {
@@ -834,7 +843,7 @@
         }
 
         result.innerHTML =
-            '<div class="portrait-wrap">' + portraitSvg + '</div>' +
+            '<div class="portrait-wrap" id="portrait-container"></div>' +
             '<div class="result-heading">' +
                 '<h1>' + escapeHtml(r.displayName) +
                     '<span class="persona-seal" title="人设倾向: ' + escapeHtml(prefix) + '" ' +
@@ -862,11 +871,21 @@
                 '<button class="btn btn-primary" id="screenshot-btn" type="button">截图发给好友 →</button>' +
             '</div>';
 
-        const codeBtn = document.getElementById('result-code');
+        // Insert portrait: DOM node (img) or HTML string (SVG)
+        var portraitContainer = document.getElementById('portrait-container');
+        if (portraitContainer) {
+            if (portraitIsNode) {
+                portraitContainer.appendChild(portraitOutput);
+            } else if (portraitOutput) {
+                portraitContainer.innerHTML = portraitOutput;
+            }
+        }
+
+        var codeBtn = document.getElementById('result-code');
         if (codeBtn) codeBtn.addEventListener('click', copyResultCode);
-        const retryBtn = document.getElementById('retry-btn');
+        var retryBtn = document.getElementById('retry-btn');
         if (retryBtn) retryBtn.addEventListener('click', restart);
-        const shotBtn = document.getElementById('screenshot-btn');
+        var shotBtn = document.getElementById('screenshot-btn');
         if (shotBtn) shotBtn.addEventListener('click', showScreenshotHint);
     }
 
@@ -904,7 +923,7 @@
         else if (/android/.test(ua))          hint = 'Android · 电源 + 音量下 截图';
         else if (/macintosh|mac os x/.test(ua)) hint = 'macOS · Cmd + Shift + 4 截图';
         else if (/windows/.test(ua))          hint = 'Windows · Win + Shift + S 截图';
-        else                                  hint = '请用系统快捷键截图';
+        else                                  hint = '请用系统截图快捷键截图';
         showToast(hint);
     }
 
@@ -988,6 +1007,7 @@
     LingenTest.renderResult         = renderResult;
     LingenTest.renderError          = renderError;
     LingenTest.handleKeydown        = handleKeydown;
+    LingenTest.showScreenshotHint   = showScreenshotHint;
     LingenTest.main                 = main;
     LingenTest.state                = state;
     LingenTest.router               = router;
