@@ -704,7 +704,7 @@
         home.innerHTML =
             '<div class="home-hero">' +
                 '<h1>SBIT 测试，但修仙版</h1>' +
-                '<p class="subtitle">测测你的灵根和资质，能否走上修仙大道？<br>16 题测出你在修仙界的品阶 · 数据完全本地计算</p>' +
+                '<p class="subtitle">测测你的灵根和资质，能否走上修仙大道？<br>数据完全本地计算，不回传</p>' +
             '</div>' +
             '<button class="btn btn-primary" id="start-btn" type="button">开卷测灵根</button>' +
             '<div class="home-footer">华科开放原子开源俱乐部 出品</div>';
