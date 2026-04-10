@@ -707,7 +707,10 @@
                 '<p class="subtitle">测测你的灵根和资质，能否走上修仙大道？<br>数据完全本地计算，不回传</p>' +
             '</div>' +
             '<button class="btn btn-primary" id="start-btn" type="button">开卷测灵根</button>' +
-            '<div class="home-footer">华科开放原子开源俱乐部 出品</div>';
+            '<div class="home-footer">' +
+                '<p>华科开放原子开源俱乐部 出品</p>' +
+                '<p><a href="https://github.com/hust-open-atom-club/sbit-xiuxian" target="_blank" rel="noopener">⭐ GitHub 开源仓库，欢迎 Star</a></p>' +
+            '</div>';
         const btn = document.getElementById('start-btn');
         if (btn) btn.addEventListener('click', startQuiz);
     }

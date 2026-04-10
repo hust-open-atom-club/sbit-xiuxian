@@ -115,6 +115,13 @@ code { font-family: ui-monospace, "SFMono-Regular", Consolas, monospace; backgro
     color: var(--color-muted);
     font-size: 12px;
 }
+#home .home-footer p { margin: 4px 0; }
+#home .home-footer a {
+    color: var(--color-cinnabar);
+    text-decoration: none;
+    border-bottom: 1px dashed var(--color-dashed);
+}
+#home .home-footer a:hover { border-bottom-color: var(--color-cinnabar); }
 
 /* ========== Quiz Section ========== */
 #quiz { padding: 16px 0; }
