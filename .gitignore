@@ -5,6 +5,9 @@
 .cache/
 .claude/
 
+# RLCR loop artifacts (plans are mutated per round; keep local only)
+docs/superpowers/plans/
+
 # OS and editor noise
 .DS_Store
 Thumbs.db
