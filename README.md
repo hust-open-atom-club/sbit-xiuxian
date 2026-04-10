@@ -6,7 +6,7 @@
 
 ## 在线体验
 
-> TODO: 部署后填入在线地址
+https://hust-open-atom-club.github.io/sbit-xiuxian/
 
 ## 本地运行
 
