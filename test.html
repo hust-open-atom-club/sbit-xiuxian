@@ -1,0 +1,279 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8">
+    <title>灵根测试 · 单元测试</title>
+    <style>
+        body { font-family: ui-monospace, "SFMono-Regular", Consolas, monospace; padding: 24px; background: #f9f9f9; color: #222; }
+        .ok   { color: #080; }
+        .fail { color: #c00; }
+        .info { color: #555; }
+        hr    { border: none; border-top: 1px dashed #ccc; margin: 16px 0; }
+    </style>
+</head>
+<body>
+<h1>灵根测试 · Unit / Integration / Content Lint</h1>
+<div id="results"></div>
+
+<!-- Must be set BEFORE loading main.js to prevent production bootstrap -->
+<script>window.LingenTest_SKIP_BOOTSTRAP = true;</script>
+<script src="main.js"></script>
+<script>
+(async function runAllTests() {
+    'use strict';
+    var root = document.getElementById('results');
+    var LT = window.LingenTest;
+    var pass = 0, fail = 0;
+
+    function log(cls, msg) { root.innerHTML += '<div class="' + cls + '">' + msg + '</div>'; }
+    function test(name, fn) {
+        try { fn(); pass++; log('ok', '✓ ' + name); }
+        catch (e) { fail++; log('fail', '✗ ' + name + ': ' + e.message); }
+    }
+    async function asyncTest(name, fn) {
+        try { await fn(); pass++; log('ok', '✓ ' + name); }
+        catch (e) { fail++; log('fail', '✗ ' + name + ': ' + e.message); }
+    }
+    function assert(c, m) { if (!c) throw new Error(m || 'assertion failed'); }
+    function assertThrows(fn, sub) {
+        try { fn(); } catch (e) {
+            if (sub && e.message.indexOf(sub) === -1) throw new Error('expected "' + sub + '" in error, got: ' + e.message);
+            return;
+        }
+        throw new Error('expected error but none thrown');
+    }
+
+    /* =============== parseQuestions =============== */
+    log('info', '<h2>parseQuestions</h2>');
+
+    test('happy path: single question', function () {
+        var md = '## Q1\n> 题干\n- 上签 · `金+2 | 社牛+1` 文本A\n- 中签 · `木+1` 文本B\n- 下签 · `水+1` 文本C';
+        var qs = LT.parseQuestions(md);
+        assert(qs.length === 1);
+        assert(qs[0].id === 1);
+        assert(qs[0].prompt === '题干');
+        assert(qs[0].options[0].label === '上签');
+        assert(qs[0].options[0].deltas['金'] === 2);
+        assert(qs[0].options[0].deltas['社牛'] === 1);
+        assert(qs[0].options[0].text === '文本A');
+    });
+
+    test('separator variants (| and comma)', function () {
+        var md = '## Q1\n> p\n- a `金+1, 社牛+2` x\n- b `木+1` y\n- c `水+1` z';
+        var qs = LT.parseQuestions(md);
+        assert(qs[0].options[0].deltas['金'] === 1);
+        assert(qs[0].options[0].deltas['社牛'] === 2);
+    });
+
+    test('malformed expression → error with Q id + option index', function () {
+        var md = '## Q3\n> p\n- a `金+` x\n- b `木+1` y\n- c `水+1` z';
+        assertThrows(function () { LT.parseQuestions(md); }, 'Q3 选项 1');
+    });
+
+    test('unknown dimension → error with dim name', function () {
+        var md = '## Q5\n> p\n- a `暗+2` x\n- b `木+1` y\n- c `水+1` z';
+        assertThrows(function () { LT.parseQuestions(md); }, '暗');
+    });
+
+    test('missing backtick → error', function () {
+        var md = '## Q2\n> p\n- a 金+2 x\n- b `木+1` y\n- c `水+1` z';
+        assertThrows(function () { LT.parseQuestions(md); }, 'Q2 选项 1');
+    });
+
+    test('missing prompt → error with Q id only', function () {
+        var md = '## Q4\n- a `金+1` x\n- b `木+1` y\n- c `水+1` z';
+        assertThrows(function () { LT.parseQuestions(md); }, 'Q4');
+    });
+
+    test('wrong option count (2 instead of 3) → error', function () {
+        var md = '## Q7\n> p\n- a `金+1` x\n- b `木+1` y';
+        assertThrows(function () { LT.parseQuestions(md); }, 'Q7');
+    });
+
+    test('malformed header (## Qxyz) → error', function () {
+        var md = '## Qxyz\n> p\n- a `金+1` x\n- b `木+1` y\n- c `水+1` z';
+        assertThrows(function () { LT.parseQuestions(md); }, '格式不合法');
+    });
+
+    /* =============== parseResults =============== */
+    log('info', '<h2>parseResults</h2>');
+
+    var sampleResultsMd =
+        '## 测试灵根\nkey: test_key\n品阶: 天灵根\n属性: 金\n前缀: 无\n结果代码: TL-TEST\n\n### 签文\n签文内容\n\n### 推荐功法\n- 功法一\n- 功法二\n\n### 画像\n袍色: #c4c9d4\n配饰: sword\n背景: rocks\n符文色: #8b8faa\n\n' +
+        '## 无根之人\nkey: default_default_default\n品阶: 无灵根\n属性: 无\n前缀: 无\n结果代码: DEF\n\n### 签文\n兜底签文\n\n### 推荐功法\n- 兜底功法\n\n### 画像\n袍色: #7a6a5a\n配饰: nothing\n背景: blank\n符文色: #a38b5c';
+
+    test('happy path: two entries parsed correctly', function () {
+        var dict = LT.parseResults(sampleResultsMd);
+        assert(dict['test_key']);
+        assert(dict['test_key'].displayName === '测试灵根');
+        assert(dict['test_key'].品阶 === '天灵根');
+        assert(dict['test_key'].签文.indexOf('签文内容') !== -1);
+        assert(dict['test_key'].推荐功法.length === 2);
+        assert(dict['test_key'].画像.袍色 === '#c4c9d4');
+        assert(dict['default_default_default']);
+    });
+
+    test('missing default_default_default → error', function () {
+        var md = '## T\nkey: t\n品阶: x\n属性: x\n前缀: x\n结果代码: T\n### 签文\ntext\n### 推荐功法\n- a\n### 画像\n袍色: #aaa\n配饰: sword\n背景: rocks\n符文色: #bbb';
+        assertThrows(function () { LT.parseResults(md); }, 'default_default_default');
+    });
+
+    test('duplicate key → error', function () {
+        var md = sampleResultsMd + '\n\n## 另一个\nkey: test_key\n品阶: x\n属性: x\n前缀: x\n结果代码: T2\n### 签文\ntext\n### 推荐功法\n- a\n### 画像\n袍色: #aaa\n配饰: sword\n背景: rocks\n符文色: #bbb';
+        assertThrows(function () { LT.parseResults(md); }, '重复');
+    });
+
+    test('invalid hex color → error', function () {
+        var md = '## T\nkey: t1\n品阶: x\n属性: x\n前缀: x\n结果代码: T\n### 签文\ntext\n### 推荐功法\n- a\n### 画像\n袍色: #notacolor\n配饰: sword\n背景: rocks\n符文色: #bbb\n\n' +
+                 '## 无根之人\nkey: default_default_default\n品阶: x\n属性: x\n前缀: x\n结果代码: DEF\n### 签文\ntext\n### 推荐功法\n- a\n### 画像\n袍色: #aaa\n配饰: nothing\n背景: blank\n符文色: #bbb';
+        assertThrows(function () { LT.parseResults(md); }, 'hex');
+    });
+
+    test('unknown accessory → error', function () {
+        var md = '## T\nkey: t2\n品阶: x\n属性: x\n前缀: x\n结果代码: T\n### 签文\ntext\n### 推荐功法\n- a\n### 画像\n袍色: #aaa\n配饰: lightsaber\n背景: rocks\n符文色: #bbb\n\n' +
+                 '## 无根之人\nkey: default_default_default\n品阶: x\n属性: x\n前缀: x\n结果代码: DEF\n### 签文\ntext\n### 推荐功法\n- a\n### 画像\n袍色: #aaa\n配饰: nothing\n背景: blank\n符文色: #bbb';
+        assertThrows(function () { LT.parseResults(md); }, '白名单');
+    });
+
+    /* =============== score / classify / resolveKey =============== */
+    log('info', '<h2>score / classify / resolveKey</h2>');
+
+    test('score: accumulation', function () {
+        var qs = [{ id:1, prompt:'p', options: [
+            { label:'上', text:'a', deltas: { '金':2, '社牛':1 } },
+            { label:'中', text:'b', deltas: {} },
+            { label:'下', text:'c', deltas: {} }
+        ]}];
+        var s = LT.score([0], qs);
+        assert(s['金'] === 2); assert(s['社牛'] === 1); assert(s['木'] === 0);
+    });
+
+    test('score: length mismatch → error', function () {
+        var qs = [{ id:1, prompt:'p', options: [{ label:'a', text:'a', deltas:{} },{ label:'b', text:'b', deltas:{} },{ label:'c', text:'c', deltas:{} }]}];
+        assertThrows(function () { LT.score([0,0], qs); }, '已答 2');
+    });
+
+    test('classify: tianling (金=6 others=0)', function () {
+        var t = LT.classify({ 金:6, 木:0, 水:0, 火:0, 土:0, 躺平:1, emo:1, 社牛:1 });
+        assert(t.品阶 === 'tianling'); assert(t.属性 === '金');
+    });
+
+    test('classify: bianling 雷 (金=5 水=5)', function () {
+        var t = LT.classify({ 金:5, 木:0, 水:5, 火:0, 土:0, 躺平:1, emo:1, 社牛:1 });
+        assert(t.品阶 === 'bianling'); assert(t.属性 === '雷');
+    });
+
+    test('classify: zhenling (金=3 木=3)', function () {
+        var t = LT.classify({ 金:3, 木:3, 水:0, 火:0, 土:0, 躺平:2, emo:1, 社牛:1 });
+        assert(t.品阶 === 'zhenling'); assert(t.属性 === '金木');
+    });
+
+    test('classify: weiling (all low)', function () {
+        var t = LT.classify({ 金:1, 木:1, 水:1, 火:1, 土:1, 躺平:1, emo:1, 社牛:1 });
+        assert(t.品阶 === 'weiling');
+    });
+
+    test('classify: yinling (wuxing=0 persona=6)', function () {
+        var t = LT.classify({ 金:0, 木:0, 水:0, 火:0, 土:0, 躺平:6, emo:2, 社牛:1 });
+        assert(t.品阶 === 'yinling');
+    });
+
+    test('classify: tie-break (金=木=3 → 金 first by declared order)', function () {
+        var t = LT.classify({ 金:3, 木:3, 水:0, 火:0, 土:0, 躺平:1, emo:1, 社牛:1 });
+        assert(t.属性 === '金木', 'expected 金木 got ' + t.属性);
+    });
+
+    test('determinePrefix: threshold + tie-break', function () {
+        assert(LT.determinePrefix({ 金:0,木:0,水:0,火:0,土:0, 躺平:4, emo:2, 社牛:1 }) === '躺平');
+        assert(LT.determinePrefix({ 金:0,木:0,水:0,火:0,土:0, 躺平:1, emo:1, 社牛:1 }) === '钝感');
+        assert(LT.determinePrefix({ 金:0,木:0,水:0,火:0,土:0, 躺平:3, emo:3, 社牛:0 }) === '躺平');
+    });
+
+    test('resolveKey: step-2 fallback (tianling)', function () {
+        var dict = { 'tianling_金_default': true, 'default_default_default': true };
+        assert(LT.resolveKey({ 品阶:'tianling', 属性:'金', 前缀:'躺平' }, dict) === 'tianling_金_default');
+    });
+
+    test('resolveKey: step-3 fallback (weiling)', function () {
+        var dict = { 'weiling_default_躺平': true, 'default_default_default': true };
+        assert(LT.resolveKey({ 品阶:'weiling', 属性:'混杂', 前缀:'躺平' }, dict) === 'weiling_default_躺平');
+    });
+
+    test('resolveKey: step-5 final fallback', function () {
+        var dict = { 'default_default_default': true };
+        assert(LT.resolveKey({ 品阶:'xyz', 属性:'xyz', 前缀:'xyz' }, dict) === 'default_default_default');
+    });
+
+    /* =============== Content Lint =============== */
+    log('info', '<h2>Content Lint — production data/*.md</h2>');
+
+    await asyncTest('load + parse data/questions.md (expect 16)', async function () {
+        var text = await LT.loadMarkdown('data/questions.md');
+        var qs = LT.parseQuestions(text);
+        assert(qs.length === 16, 'got ' + qs.length);
+    });
+
+    await asyncTest('load + parse data/results.md (expect 25 + default)', async function () {
+        var text = await LT.loadMarkdown('data/results.md');
+        var dict = LT.parseResults(text);
+        assert(dict['default_default_default'], 'missing default');
+        assert(Object.keys(dict).length === 25, 'got ' + Object.keys(dict).length);
+    });
+
+    await asyncTest('all portrait enums whitelisted', async function () {
+        var text = await LT.loadMarkdown('data/results.md');
+        var dict = LT.parseResults(text);
+        for (var k in dict) {
+            var e = dict[k];
+            if (e.画像 && e.画像.配饰) assert(LT.PORTRAIT_ACCESSORIES.has(e.画像.配饰), e.displayName + ': 配饰 ' + e.画像.配饰);
+            if (e.画像 && e.画像.背景) assert(LT.PORTRAIT_BACKGROUNDS.has(e.画像.背景), e.displayName + ': 背景 ' + e.画像.背景);
+        }
+    });
+
+    await asyncTest('five grades reachable under production data', async function () {
+        var qText = await LT.loadMarkdown('data/questions.md');
+        var rText = await LT.loadMarkdown('data/results.md');
+        var qs = LT.parseQuestions(qText);
+        var dict = LT.parseResults(rText);
+
+        // Tianling: Q1(上:金+3) + Q13(上:金+3), others 下签(persona)
+        var a_tl = Array(16).fill(2); a_tl[0] = 0; a_tl[12] = 0;
+        assert(LT.classify(LT.score(a_tl, qs)).品阶 === 'tianling', 'tianling');
+
+        // Bianling 雷: Q1(上:金+3) Q3(上:水+3) Q6(上:金+2水+2), others 下签
+        var a_bl = Array(16).fill(2); a_bl[0] = 0; a_bl[2] = 0; a_bl[5] = 0;
+        assert(LT.classify(LT.score(a_bl, qs)).品阶 === 'bianling', 'bianling');
+
+        // Zhenling: Q1(上:金+3) Q2(上:木+3), others 下签
+        var a_zl = Array(16).fill(2); a_zl[0] = 0; a_zl[1] = 0;
+        assert(LT.classify(LT.score(a_zl, qs)).品阶 === 'zhenling', 'zhenling');
+
+        // Weiling: mostly 下签 + two 中签 giving small mixed wuxing
+        var a_wl = Array(16).fill(2);
+        a_wl[1] = 1; // Q2中: 土+1 金+1
+        a_wl[3] = 1; // Q4中: 金+1 土+1
+        var s_wl = LT.score(a_wl, qs);
+        assert(LT.classify(s_wl).品阶 === 'weiling', 'weiling: got ' + LT.classify(s_wl).品阶);
+
+        // Yinling: all 下签 (pure persona, wuxing=0)
+        var a_yl = Array(16).fill(2);
+        assert(LT.classify(LT.score(a_yl, qs)).品阶 === 'yinling', 'yinling');
+
+        // Verify all keys resolve
+        [a_tl, a_bl, a_zl, a_wl, a_yl].forEach(function (a) {
+            var s = LT.score(a, qs);
+            var t = LT.classify(s);
+            var k = LT.resolveKey(t, dict);
+            assert(dict[k], 'key ' + k + ' not in dict');
+        });
+    });
+
+    /* =============== Summary =============== */
+    log('info', '<hr>');
+    log('info', '<strong>Passed: ' + pass + ' / ' + (pass + fail) + '</strong>');
+    if (fail > 0) log('fail', '<strong>' + fail + ' FAILED</strong>');
+    else log('ok', '<strong>All tests passed!</strong>');
+})();
+</script>
+</body>
+</html>
