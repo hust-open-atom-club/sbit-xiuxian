@@ -1,4 +1,4 @@
-# SBIT 测试，但红尘修仙版
+# SBTI 测试，但红尘修仙版
 
 测出你在修仙界的资质品阶。数据完全本地计算，不回传。
 
@@ -6,7 +6,7 @@
 
 ## 在线体验
 
-https://hust-open-atom-club.github.io/sbit-xiuxian/
+https://hust-open-atom-club.github.io/sbti-xiuxian/
 
 ## 本地运行
 
@@ -57,7 +57,7 @@ python3 -m http.server
 
 发布前逐项验证：
 
-- [x] Chrome DevTools 模拟 iPhone SE (375px)：题目页三个选项单列堆叠，无溢出 — 用户经 https://hust-open-atom-club.github.io/sbit-xiuxian/ 验证通过
+- [x] Chrome DevTools 模拟 iPhone SE (375px)：题目页三个选项单列堆叠，无溢出 — 用户经 https://hust-open-atom-club.github.io/sbti-xiuxian/ 验证通过
 - [x] Chrome DevTools 模拟 iPad (768px)：结果页签文和五行条双列布局生效 — 用户验证通过
 - [x] 桌面 1280px：内容居中、鼠标 hover 反馈存在、不粘住 — 用户验证通过
 - [x] 键盘测试：`1`/`2`/`3` 选择选项、`Enter` 确认、`←` 不触发回退 — 用户验证通过

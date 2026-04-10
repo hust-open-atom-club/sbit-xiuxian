@@ -717,7 +717,7 @@
         if (!home) return;
         home.innerHTML =
             '<div class="home-hero">' +
-                '<h1>SBIT 测试，但红尘修仙版</h1>' +
+                '<h1>SBTI 测试，但红尘修仙版</h1>' +
                 '<p class="subtitle">测测你的灵根和资质，能否走上修仙大道？</p>' +
             '</div>' +
             '<div class="home-info">' +
@@ -729,7 +729,7 @@
             '<button class="btn btn-primary" id="start-btn" type="button">开卷测灵根</button>' +
             '<div class="home-footer">' +
                 '<p>华科开放原子开源俱乐部 出品</p>' +
-                '<p><a href="https://github.com/hust-open-atom-club/sbit-xiuxian" target="_blank" rel="noopener">⭐ GitHub 开源仓库，欢迎 Star</a></p>' +
+                '<p><a href="https://github.com/hust-open-atom-club/sbti-xiuxian" target="_blank" rel="noopener">⭐ GitHub 开源仓库，欢迎 Star</a></p>' +
             '</div>';
         const btn = document.getElementById('start-btn');
         if (btn) btn.addEventListener('click', startQuiz);
