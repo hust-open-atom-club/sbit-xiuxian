@@ -12,47 +12,112 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Chromium
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Run tests via Node.js
         run: |
-          sudo apt-get update
-          sudo apt-get install -y chromium-browser
+          node -e "
+          // Minimal DOM shim for main.js
+          global.window = global;
+          global.document = {
+              readyState: 'complete',
+              addEventListener: function(){},
+              getElementById: function(){ return null; },
+              querySelectorAll: function(){ return []; },
+              createElement: function(t){ return { tagName: t.toUpperCase(), src: '', alt: '', width: 0, height: 0, style: {} }; },
+              body: { appendChild: function(){} },
+              activeElement: null,
+              createRange: function(){ return { selectNodeContents: function(){} }; }
+          };
+          global.navigator = { userAgent: '', clipboard: null };
+          global.location = { protocol: 'http:', reload: function(){} };
+          global.MutationObserver = function(){};
+          global.MutationObserver.prototype.observe = function(){};
+          global.MutationObserver.prototype.disconnect = function(){};
+          global.DOMParser = function(){};
+          global.CSS = { escape: function(s){ return s; } };
+          global.LingenTest_SKIP_BOOTSTRAP = true;
 
-      - name: Start HTTP server
-        run: |
-          python3 -m http.server 8080 &
-          sleep 2
+          require('./main.js');
 
-      - name: Run test.html in headless Chromium
-        run: |
-          chromium-browser \
-            --headless \
-            --no-sandbox \
-            --disable-gpu \
-            --dump-dom \
-            http://localhost:8080/test.html \
-            2>/dev/null | tee test-output.html
+          const LT = global.LingenTest;
+          const fs = require('fs');
+          let pass = 0, fail = 0;
 
-          # Wait for async tests to complete
-          sleep 5
-          chromium-browser \
-            --headless \
-            --no-sandbox \
-            --disable-gpu \
-            --dump-dom \
-            http://localhost:8080/test.html \
-            2>/dev/null | tee test-output.html
+          function test(n, fn) {
+              try { fn(); pass++; console.log('✓', n); }
+              catch (e) { fail++; console.log('✗', n, ':', e.message); }
+          }
+          function assert(c, m) { if (!c) throw new Error(m || 'assertion failed'); }
+          function assertThrows(fn, sub) {
+              try { fn(); } catch (e) {
+                  if (sub && e.message.indexOf(sub) === -1) throw new Error('expected \"' + sub + '\" got: ' + e.message);
+                  return;
+              }
+              throw new Error('expected error');
+          }
 
-          # Check for failures
-          if grep -q "FAILED" test-output.html; then
-            echo "::error::Tests failed!"
-            grep "FAILED\|✗" test-output.html
-            exit 1
-          fi
+          // ===== parseQuestions =====
+          test('parseQuestions: happy path', () => {
+              var md = '## Q1\n> 题干\n- 上签 · \`金+2 | 社牛+1\` 文本A\n- 中签 · \`木+1\` 文本B\n- 下签 · \`水+1\` 文本C';
+              var qs = LT.parseQuestions(md);
+              assert(qs.length === 1); assert(qs[0].options[0].deltas['金'] === 2);
+          });
+          test('parseQuestions: separator variants', () => {
+              var qs = LT.parseQuestions('## Q1\n> p\n- a \`金+1, 社牛+2\` x\n- b \`木+1\` y\n- c \`水+1\` z');
+              assert(qs[0].options[0].deltas['社牛'] === 2);
+          });
+          test('parseQuestions: malformed expr', () => assertThrows(() => LT.parseQuestions('## Q3\n> p\n- a \`金+\` x\n- b \`木+1\` y\n- c \`水+1\` z'), 'Q3 选项 1'));
+          test('parseQuestions: unknown dim', () => assertThrows(() => LT.parseQuestions('## Q5\n> p\n- a \`暗+2\` x\n- b \`木+1\` y\n- c \`水+1\` z'), '暗'));
+          test('parseQuestions: missing backtick', () => assertThrows(() => LT.parseQuestions('## Q2\n> p\n- a 金+2 x\n- b \`木+1\` y\n- c \`水+1\` z'), 'Q2 选项 1'));
+          test('parseQuestions: missing prompt', () => assertThrows(() => LT.parseQuestions('## Q4\n- a \`金+1\` x\n- b \`木+1\` y\n- c \`水+1\` z'), 'Q4'));
+          test('parseQuestions: wrong count', () => assertThrows(() => LT.parseQuestions('## Q7\n> p\n- a \`金+1\` x\n- b \`木+1\` y'), 'Q7'));
+          test('parseQuestions: bad header', () => assertThrows(() => LT.parseQuestions('## Qxyz\n> p\n- a \`金+1\` x\n- b \`木+1\` y\n- c \`水+1\` z'), '格式不合法'));
 
-          # Check for pass count
-          if grep -q "All tests passed" test-output.html; then
-            echo "All tests passed!"
-          else
-            echo "::warning::Could not confirm all tests passed. Check output."
-            cat test-output.html | head -100
-          fi
+          // ===== parseResults =====
+          var sample = '## 测试灵根\nkey: test_key\n品阶: 天灵根\n属性: 金\n前缀: 无\n结果代码: TL-TEST\n\n### 签文\n签文内容\n\n### 推荐功法\n- 功法一\n- 功法二\n\n### 画像\n袍色: #c4c9d4\n配饰: sword\n背景: rocks\n符文色: #8b8faa\n\n## 无根之人\nkey: default_default_default\n品阶: 无灵根\n属性: 无\n前缀: 无\n结果代码: DEF\n\n### 签文\n兜底签文\n\n### 推荐功法\n- 兜底功法\n\n### 画像\n袍色: #7a6a5a\n配饰: nothing\n背景: blank\n符文色: #a38b5c';
+          test('parseResults: happy', () => { var d = LT.parseResults(sample); assert(d['test_key']); assert(d['default_default_default']); });
+          test('parseResults: missing default', () => assertThrows(() => LT.parseResults('## T\nkey: t\n品阶: x\n属性: x\n前缀: x\n结果代码: T\n### 签文\ntext\n### 推荐功法\n- a\n### 画像\n袍色: #aaa\n配饰: sword\n背景: rocks\n符文色: #bbb'), 'default_default_default'));
+          test('parseResults: dup key names both', () => { try { LT.parseResults(sample + '\n\n## 另一个\nkey: test_key\n品阶: x\n属性: x\n前缀: x\n结果代码: T2\n### 签文\ntext\n### 推荐功法\n- a\n### 画像\n袍色: #aaa\n配饰: sword\n背景: rocks\n符文色: #bbb'); assert(false); } catch(e) { assert(e.message.indexOf('另一个') !== -1); assert(e.message.indexOf('测试灵根') !== -1); }});
+          test('parseResults: bad hex', () => assertThrows(() => LT.parseResults('## T\nkey: t1\n品阶: x\n属性: x\n前缀: x\n结果代码: T\n### 签文\ntext\n### 推荐功法\n- a\n### 画像\n袍色: #notacolor\n配饰: sword\n背景: rocks\n符文色: #bbb\n\n## 无根之人\nkey: default_default_default\n品阶: x\n属性: x\n前缀: x\n结果代码: DEF\n### 签文\ntext\n### 推荐功法\n- a\n### 画像\n袍色: #aaa\n配饰: nothing\n背景: blank\n符文色: #bbb'), 'hex'));
+          test('parseResults: bad accessory', () => assertThrows(() => LT.parseResults('## T\nkey: t2\n品阶: x\n属性: x\n前缀: x\n结果代码: T\n### 签文\ntext\n### 推荐功法\n- a\n### 画像\n袍色: #aaa\n配饰: lightsaber\n背景: rocks\n符文色: #bbb\n\n## 无根之人\nkey: default_default_default\n品阶: x\n属性: x\n前缀: x\n结果代码: DEF\n### 签文\ntext\n### 推荐功法\n- a\n### 画像\n袍色: #aaa\n配饰: nothing\n背景: blank\n符文色: #bbb'), '白名单'));
+          test('parseResults: bad background', () => { try { LT.parseResults('## T\nkey: t3\n品阶: x\n属性: x\n前缀: x\n结果代码: T\n### 签文\ntext\n### 推荐功法\n- a\n### 画像\n袍色: #aaa\n配饰: sword\n背景: underwater\n符文色: #bbb\n\n## 无根之人\nkey: default_default_default\n品阶: x\n属性: x\n前缀: x\n结果代码: DEF\n### 签文\ntext\n### 推荐功法\n- a\n### 画像\n袍色: #aaa\n配饰: nothing\n背景: blank\n符文色: #bbb'); assert(false); } catch(e) { assert(e.message.indexOf('underwater') !== -1); }});
+
+          // ===== renderPortrait =====
+          test('renderPortrait image returns element', () => { var r = LT.renderPortrait({image:'test.png'}); assert(r && r.tagName === 'IMG'); });
+
+          // ===== score/classify/resolveKey =====
+          test('score: accumulation', () => { var s = LT.score([0], [{id:1,prompt:'p',options:[{label:'a',text:'a',deltas:{金:2,社牛:1}},{label:'b',text:'b',deltas:{}},{label:'c',text:'c',deltas:{}}]}]); assert(s['金'] === 2); });
+          test('score: length mismatch', () => assertThrows(() => LT.score([0,0], [{id:1,prompt:'p',options:[{label:'a',text:'a',deltas:{}},{label:'b',text:'b',deltas:{}},{label:'c',text:'c',deltas:{}}]}]), '已答 2'));
+          test('classify: tianling', () => assert(LT.classify({金:6,木:0,水:0,火:0,土:0,躺平:1,emo:1,社牛:1}).品阶 === 'tianling'));
+          test('classify: bianling', () => { var t = LT.classify({金:5,木:0,水:5,火:0,土:0,躺平:1,emo:1,社牛:1}); assert(t.品阶 === 'bianling'); assert(t.属性 === '雷'); });
+          test('classify: zhenling', () => assert(LT.classify({金:3,木:3,水:0,火:0,土:0,躺平:2,emo:1,社牛:1}).品阶 === 'zhenling'));
+          test('classify: weiling', () => assert(LT.classify({金:1,木:1,水:1,火:1,土:1,躺平:1,emo:1,社牛:1}).品阶 === 'weiling'));
+          test('classify: yinling', () => assert(LT.classify({金:0,木:0,水:0,火:0,土:0,躺平:6,emo:2,社牛:1}).品阶 === 'yinling'));
+          test('classify: tie-break', () => assert(LT.classify({金:3,木:3,水:0,火:0,土:0,躺平:1,emo:1,社牛:1}).属性 === '金木'));
+          test('resolveKey: step-2', () => assert(LT.resolveKey({品阶:'tianling',属性:'金',前缀:'躺平'}, {'tianling_金_default':true,'default_default_default':true}) === 'tianling_金_default'));
+          test('resolveKey: step-3', () => assert(LT.resolveKey({品阶:'weiling',属性:'混杂',前缀:'躺平'}, {'weiling_default_躺平':true,'default_default_default':true}) === 'weiling_default_躺平'));
+          test('resolveKey: step-5', () => assert(LT.resolveKey({品阶:'xyz',属性:'xyz',前缀:'xyz'}, {'default_default_default':true}) === 'default_default_default'));
+          test('screenshot hint text', () => assert(LT.showScreenshotHint.toString().indexOf('请用系统截图快捷键截图') !== -1));
+
+          // ===== Production data =====
+          var qs = LT.parseQuestions(fs.readFileSync('data/questions.md', 'utf8'));
+          var dict = LT.parseResults(fs.readFileSync('data/results.md', 'utf8'));
+          test('production questions >= 1', () => assert(qs.length >= 1, 'got ' + qs.length));
+          test('production results = 25 + default', () => { assert(dict['default_default_default']); assert(Object.keys(dict).length === 25, 'got ' + Object.keys(dict).length); });
+          test('portrait enums whitelisted', () => { for (var k in dict) { var e = dict[k]; if (e.画像 && e.画像.配饰) assert(LT.PORTRAIT_ACCESSORIES.has(e.画像.配饰), e.displayName + ': ' + e.画像.配饰); if (e.画像 && e.画像.背景) assert(LT.PORTRAIT_BACKGROUNDS.has(e.画像.背景), e.displayName + ': ' + e.画像.背景); }});
+
+          // ===== Five grades =====
+          function fx(n, a, exp) { var s = LT.score(a, qs), t = LT.classify(s); assert(t.品阶 === exp, n + ': got ' + t.品阶 + ' expected ' + exp); var k = LT.resolveKey(t, dict); assert(dict[k], 'key ' + k + ' not in dict'); }
+          test('fixture: tianling', () => { var a = Array(qs.length).fill(2); a[0]=0; a[4]=0; fx('tianling', a, 'tianling'); });
+          test('fixture: bianling', () => { var a = Array(qs.length).fill(2); a[0]=0; a[4]=0; a[3]=0; a[7]=0; fx('bianling', a, 'bianling'); });
+          test('fixture: zhenling', () => { var a = Array(qs.length).fill(2); a[0]=0; a[1]=0; fx('zhenling', a, 'zhenling'); });
+          test('fixture: weiling', () => { var a = Array(qs.length).fill(2); a[2]=1; a[9]=1; fx('weiling', a, 'weiling'); });
+          test('fixture: yinling', () => { var a = Array(qs.length).fill(2); fx('yinling', a, 'yinling'); });
+
+          console.log();
+          console.log(fail === 0 ? 'ALL ' + pass + ' TESTS PASSED' : fail + ' FAILED out of ' + (pass + fail));
+          process.exit(fail === 0 ? 0 : 1);
+          "
