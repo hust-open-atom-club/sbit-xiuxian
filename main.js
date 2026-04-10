@@ -47,6 +47,9 @@
     const YINLING_TOTAL_MAX   = 3;
     const YINLING_PERSONA_MIN = 5;
 
+    // Number of questions to randomly pick per quiz session
+    const QUIZ_SIZE = 24;
+
     // Variant combinations (declared-order pair key; see DEC-2 A).
     const BIAN_COMBO = {
         '金_水': '雷',
@@ -64,6 +67,16 @@
         return String(str).replace(/[&<>"']/g, function (c) {
             return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c];
         });
+    }
+
+    function shuffleAndPick(arr, count) {
+        var pool = arr.slice();
+        // Fisher-Yates shuffle
+        for (var i = pool.length - 1; i > 0; i--) {
+            var j = Math.floor(Math.random() * (i + 1));
+            var tmp = pool[i]; pool[i] = pool[j]; pool[j] = tmp;
+        }
+        return pool.slice(0, Math.min(count, pool.length));
     }
 
     async function loadMarkdown(path) {
@@ -678,6 +691,7 @@
        ================================================================ */
 
     const state = {
+        allQuestions: [],
         questions: [],
         resultsDict: {},
         answers: [],
@@ -722,6 +736,7 @@
     }
 
     function startQuiz() {
+        state.questions = shuffleAndPick(state.allQuestions, QUIZ_SIZE);
         state.answers = [];
         state.cursor = 0;
         state.classification = null;
@@ -994,11 +1009,12 @@
                 loadMarkdown('data/questions.md'),
                 loadMarkdown('data/results.md')
             ]);
-            state.questions   = parseQuestions(loaded[0]);
+            state.allQuestions = parseQuestions(loaded[0]);
             state.resultsDict = parseResults(loaded[1]);
-            if (state.questions.length === 0) {
+            if (state.allQuestions.length === 0) {
                 throw new Error('题库为空：data/questions.md 中未找到任何题目');
             }
+            state.questions = shuffleAndPick(state.allQuestions, QUIZ_SIZE);
             router.go('home');
             renderHome();
         } catch (e) {
@@ -1032,6 +1048,8 @@
     LingenTest.PORTRAIT_BACKGROUNDS = PORTRAIT_BACKGROUNDS;
     LingenTest.WUXING               = WUXING;
     LingenTest.PERSONA              = PERSONA;
+    LingenTest.shuffleAndPick       = shuffleAndPick;
+    LingenTest.QUIZ_SIZE            = QUIZ_SIZE;
 
     global.LingenTest = LingenTest;
 
